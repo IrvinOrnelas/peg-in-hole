@@ -5,11 +5,12 @@ import socket
 import threading
 import time
 from typing import Optional, Tuple
+import struct
 
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool, Float64MultiArray, String
+from std_msgs.msg import Float64
 from sensor_msgs.msg import JointState
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
@@ -39,7 +40,7 @@ class MasterNetNode(Node):
         self.declare_parameter('port_rx', 9002)
         self.declare_parameter('tcp_client_mode', True)    # True: master connects, False: master listens
         self.declare_parameter('recv_timeout_sec', 0.01)
-        self.declare_parameter('send_period_sec', 0.02)    # 50 Hz
+        self.declare_parameter('send_period_sec', 0.035)    # 50 Hz
 
         self.transport = self.get_parameter('transport').get_parameter_value().string_value.lower()
         self.slave_ip = self.get_parameter('slave_ip').get_parameter_value().string_value
@@ -59,9 +60,7 @@ class MasterNetNode(Node):
 
         self.q_des = np.zeros(6, dtype=np.float64)
 
-        self.F_contact = np.zeros(3, dtype=np.float64)
-        self.in_contact = False
-        self.contact_state = "APPROACH"
+        self.force = 0.0
 
         # UDP sockets
         self.udp_sock_tx: Optional[socket.socket] = None
@@ -87,11 +86,8 @@ class MasterNetNode(Node):
             self.q_des_cb,
             best_effort_qos
         )
-
-        # Output received contact info to ROS
-        self.contact_force_pub = self.create_publisher(Float64MultiArray, 'master/F_contact', 10)
-        self.in_contact_pub = self.create_publisher(Bool, 'master/in_contact', 10)
-        self.contact_state_pub = self.create_publisher(String, 'master/contact_state', 10)
+        
+        self.force_pub = self.create_publisher(Float64, "slave/force_sensor/force", 10)
 
         self.timer = self.create_timer(self.send_period_sec, self.timer_cb)
 
@@ -118,22 +114,11 @@ class MasterNetNode(Node):
             self.get_logger().warn("Received master/q_des with less than 6 elements")
 
     def timer_cb(self):
-        # Send q_des instead of p_des
         self.send_target(self.q_des)
-        self.publish_contact_data()
 
-    def publish_contact_data(self):
-        f_msg = Float64MultiArray()
-        f_msg.data = self.F_contact.tolist()
-        self.contact_force_pub.publish(f_msg)
-
-        c_msg = Bool()
-        c_msg.data = self.in_contact
-        self.in_contact_pub.publish(c_msg)
-
-        s_msg = String()
-        s_msg.data = self.contact_state
-        self.contact_state_pub.publish(s_msg)
+        msg = Float64()
+        msg.data = self.force
+        self.force_pub.publish(msg)
 
     # ============================================================
     # Network setup
@@ -169,6 +154,7 @@ class MasterNetNode(Node):
         while rclpy.ok() and self.running:
             try:
                 self.tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.tcp_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self.tcp_sock.settimeout(2.0)
                 self.tcp_sock.connect((self.slave_ip, self.port_tx))
                 self.tcp_sock.settimeout(self.recv_timeout_sec)
@@ -298,21 +284,10 @@ class MasterNetNode(Node):
     # ============================================================
     def _process_incoming_message(self, raw_data: bytes):
         try:
-            parsed = json.loads(raw_data.decode())
+            if len(raw_data) >= 4:
+                self.force = struct.unpack("f", raw_data[:4])[0]
 
-            msg_type = parsed.get("type", "contact")
-            if msg_type != "contact":
-                return
-
-            F_contact = np.asarray(parsed["F_contact"], dtype=np.float64)
-            if F_contact.shape != (2,):
-                raise ValueError("F_contact must be a 2-element vector")
-
-            self.F_contact = F_contact
-            self.in_contact = bool(parsed["in_contact"])
-            self.contact_state = str(parsed["contact_state"])
-
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+        except Exception as e:
             self.get_logger().warn(f"Invalid incoming message: {e}")
 
     # ============================================================

@@ -15,6 +15,8 @@ import socket
 import time
 import argparse
 import statistics
+import numpy as np
+import matplotlib.pyplot as plt
 
 PORT = 9999
 N_PACKETS = 100   # número de paquetes de prueba
@@ -24,25 +26,46 @@ PERIOD = 1.0 / RATE_HZ
 
 def print_stats(rtts, lost):
     total = N_PACKETS
+
     if rtts:
+        mean_rtt = statistics.mean(rtts)
+        std_rtt = statistics.stdev(rtts) if len(rtts) > 1 else 0.0
+        p99 = np.percentile(rtts, 99)
+
         print(f"\n{'='*50}")
         print(f"  Paquetes enviados  : {total}")
         print(f"  Paquetes perdidos  : {lost} ({100*lost/total:.1f}%)")
         print(f"  RTT mínimo         : {min(rtts):.2f} ms")
         print(f"  RTT máximo         : {max(rtts):.2f} ms")
-        print(f"  RTT promedio       : {statistics.mean(rtts):.2f} ms")
-        if len(rtts) > 1:
-            print(f"  Desv. estándar RTT : {statistics.stdev(rtts):.2f} ms")
-        else:
-            print(f"  Desv. estándar RTT : 0.00 ms")
+        print(f"  RTT promedio       : {mean_rtt:.2f} ms")
+        print(f"  Desv. estándar RTT : {std_rtt:.2f} ms")
+        print(f"  Percentil 99 RTT   : {p99:.2f} ms")
         print(f"{'='*50}")
 
-        if statistics.mean(rtts) < 10.0 and lost / total < 0.01:
-            print("  ✓ RED APTA para control de impedancia (< 10 ms, < 1% pérdida)")
+        # Histograma
+        plt.figure()
+        plt.hist(rtts, bins=20)
+        plt.xlabel("RTT (ms)")
+        plt.ylabel("Frecuencia")
+        plt.title("Histograma de RTT Maestro-Esclavo")
+        plt.grid(True)
+
+        # línea del promedio
+        plt.axvline(mean_rtt, linestyle="--", label=f"Media = {mean_rtt:.2f} ms")
+
+        # línea del percentil 99
+        plt.axvline(p99, linestyle="--", label=f"P99 = {p99:.2f} ms")
+
+        plt.legend()
+        plt.show()
+
+        if mean_rtt < 10.0 and lost / total < 0.01:
+            print("✓ RED APTA para control de impedancia")
         else:
-            print("  ✗ RED INADECUADA — revisar conexión WiFi o usar cable")
+            print("✗ RED INADECUADA — revisar conexión")
+
     else:
-        print("ERROR: Sin respuesta del servidor. Verificar IP, firewall y conexión.")
+        print("ERROR: Sin respuesta del servidor.")
 
 
 # =========================================================

@@ -23,7 +23,7 @@ class HapticFeedbackNode(Node):
 
         super().__init__('haptic_feedback_node')
 
-        self.beta = 0.7
+        self.beta = 0.5
         self.K_virtual = 50.0
         self.umbral_min = 1.0
         self.umbral_max = 10.0
@@ -40,7 +40,7 @@ class HapticFeedbackNode(Node):
         self.force_kick_extra = 25.0
 
         self.create_subscription(JointState,"/leader/joint_states" , self.joint_callback, 10)
-        self.create_subscription(Float64,   "force_sensor/force", self.force_callback, 10)
+        self.create_subscription(Float64,   "slave/force_sensor/force", self.force_callback, 10)
 
         self.leader_client = self.create_client(MoveJoint, '/leader/set_servo_angle')
         

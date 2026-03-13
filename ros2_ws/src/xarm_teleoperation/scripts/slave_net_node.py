@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import socket
+import struct
 import threading
 import json
 import time
@@ -8,10 +9,11 @@ from typing import Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
+import struct
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float64MultiArray, Bool, String
+from std_msgs.msg import Bool, String, Float64
 from xarm_msgs.srv import MoveJoint
 
 
@@ -40,6 +42,8 @@ class SlaveNetServer:
         self.master_addr: Optional[Tuple[str, int]] = None
 
         self._running = True
+        
+        self.force = 0.0
 
         # UDP
         self.sock: Optional[socket.socket] = None
@@ -157,32 +161,6 @@ class SlaveNetServer:
             pass
         self.conn = None
 
-    def send_contact_data(
-        self,
-        F_contact: npt.NDArray[np.float64],
-        in_contact: bool,
-        contact_state: str
-    ):
-        F_contact = np.asarray(F_contact, dtype=np.float64)
-
-        if F_contact.shape != (2,):
-            raise ValueError("F_contact must be a 2-element vector")
-
-        msg = json.dumps({
-            "F_contact": F_contact.tolist(),
-            "in_contact": int(in_contact),
-            "contact_state": contact_state
-        })
-
-        try:
-            if self.transport == "udp":
-                self.sock.sendto(msg.encode(), (self.master_ip, self.port_tx))
-            else:
-                if self.conn is not None:
-                    self.conn.sendall((msg + "\n").encode())
-        except Exception:
-            pass
-
     def shutdown(self):
         self._running = False
 
@@ -229,11 +207,8 @@ class SlaveNetNode(Node):
             transport=transport,
             tcp_server_mode=tcp_server_mode
         )
-
-        # Internal contact state
-        self.F_contact = np.zeros(2, dtype=np.float64)
-        self.in_contact = False
-        self.contact_state = "no_contact"
+        
+        self.force = 0.0
         
         # Services
         self.follower_client = self.create_client(MoveJoint, '/follower/set_servo_angle')
@@ -243,27 +218,20 @@ class SlaveNetNode(Node):
             
         self.waiting_for_response = False
         self.message_counter = 0
-        
-
-        # Publishers
 
         # Subscribers
-        self.create_subscription(Float64MultiArray, "/slave/contact_force", self.cb_force, 10)
-        self.create_subscription(Bool, "/slave/in_contact", self.cb_in_contact, 10)
-        self.create_subscription(String, "/slave/contact_state", self.cb_contact_state, 10)
+        self.create_subscription(Float64, "force_sensor/force", self.cb_force, 10)
 
         # Timer
-        self.create_timer(0.02, self.update_loop)  # 50 Hz
+        self.create_timer(0.035, self.update_loop)  # 50 Hz
 
         self.get_logger().info(
             f"SlaveNetNode running with transport={transport}, "
             f"master_ip={master_ip}, port_rx={port_rx}, port_tx={port_tx}"
         )
 
-    def cb_force(self, msg: Float64MultiArray):
-        arr = np.asarray(msg.data, dtype=np.float64)
-        if arr.shape[0] >= 2:
-            self.F_contact = arr[:2]
+    def cb_force(self, msg: Float64):
+        self.force = msg.data
 
     def cb_in_contact(self, msg: Bool):
         self.in_contact = bool(msg.data)
@@ -272,33 +240,33 @@ class SlaveNetNode(Node):
         self.contact_state = msg.data
 
     def update_loop(self):
-        # Publish received p_des
-        self.net.send_contact_data(
-            F_contact=self.F_contact,
-            in_contact=self.in_contact,
-            contact_state=self.contact_state
-        )
 
-        # 2. Lógica para mover el robot esclavo con los datos recibidos por red
+        packet = struct.pack("f", self.force)
+
+        try:
+            if self.net.transport == "udp":
+                self.net.sock.sendto(packet, (self.net.master_ip, self.net.port_tx))
+            else:
+                if self.net.conn is not None:
+                    self.net.conn.sendall(packet)
+        except:
+            pass
+
         if not self.net.has_received_target or self.waiting_for_response:
-            return  # Si no hay datos de red o estamos esperando al robot, abortamos
+            return
 
         request = MoveJoint.Request()
-        # Tomamos los ángulos que llegaron por el socket TCP/UDP
-        request.angles = self.net.q_des.tolist() 
+        request.angles = self.net.q_des.tolist()
         request.speed = 0.0
         request.acc = 0.0
         request.mvtime = 0.0
 
-        # Bloqueamos el envío de nuevos comandos
         self.waiting_for_response = True
-
-        # Enviamos el comando asíncrono
         future = self.follower_client.call_async(request)
         future.add_done_callback(self.service_done_callback)
 
         self.message_counter += 1
-        if self.message_counter % 10 == 0:
+        if self.message_counter % 250 == 0:
             formatted_angles = [round(angle, 3) for angle in request.angles]
             self.get_logger().info(f'Enviados por red {self.message_counter}. Ángulos: {formatted_angles}')
             

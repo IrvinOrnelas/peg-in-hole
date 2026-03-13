@@ -36,6 +36,7 @@ install(PROGRAMS
   scripts/slave_net_node.py  
   scripts/logger.py
   scripts/haptic_feedback.py
+  scripts/force_visualizer.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
