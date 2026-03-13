@@ -11,6 +11,8 @@ find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclpy REQUIRED)
 
+ament_python_install_package(${PROJECT_NAME})
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -24,9 +26,16 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
 install(PROGRAMS
   scripts/master_net_node.py
   scripts/slave_net_node.py  
+  scripts/logger.py
+  scripts/haptic_feedback.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

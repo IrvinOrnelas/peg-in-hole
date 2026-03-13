@@ -40,9 +40,9 @@ from geometry_msgs.msg import Point, TwistStamped
 from std_msgs.msg import ColorRGBA, Bool
 from tf2_ros import Buffer, TransformListener
 
-from .kinematics import forward_kinematics, position_jacobian, JOINT_NAMES
-from .dynamics import get_dynamics
-from .ik_solver import WeightedIKSolver
+from ..xarm_teleoperation.kinematics import forward_kinematics, position_jacobian, JOINT_NAMES
+from ..xarm_teleoperation.dynamics import get_dynamics
+from ..xarm_teleoperation.ik_solver import WeightedIKSolver
 from .trajectory import PCBTrajectory
 
 # ---------------------------------------------------------------------------

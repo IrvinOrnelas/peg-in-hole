@@ -253,7 +253,7 @@ class SlaveNetNode(Node):
         self.create_subscription(String, "/slave/contact_state", self.cb_contact_state, 10)
 
         # Timer
-        self.create_timer(0.02, self.update_loop)  # 100 Hz
+        self.create_timer(0.02, self.update_loop)  # 50 Hz
 
         self.get_logger().info(
             f"SlaveNetNode running with transport={transport}, "

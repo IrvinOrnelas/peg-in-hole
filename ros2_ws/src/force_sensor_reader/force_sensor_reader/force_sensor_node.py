@@ -18,7 +18,7 @@ import threading
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from std_msgs.msg import Float32, String
+from std_msgs.msg import Float64, String
 
 try:
     import serial
@@ -39,7 +39,7 @@ class ForceSensorNode(Node):
         super().__init__("force_sensor_node")
 
         # ── Parameters ────────────────────────────────────────────────────────
-        self.declare_parameter("port", "/dev/ttyUSB0")
+        self.declare_parameter("port", "/dev/ttyACM0")
         self.declare_parameter("baud_rate", 115200)
         self.declare_parameter("timeout", 1.0)
         self.declare_parameter("frame_id", "force_sensor")
@@ -51,17 +51,17 @@ class ForceSensorNode(Node):
 
         # ── QoS ───────────────────────────────────────────────────────────────
         sensor_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
 
         # ── Publishers ────────────────────────────────────────────────────────
         self._pub_force = self.create_publisher(
-            Float32, "force_sensor/force", sensor_qos
+            Float64, "force_sensor/force", sensor_qos
         )
         self._pub_compression = self.create_publisher(
-            Float32, "force_sensor/compression", sensor_qos
+            Float64, "force_sensor/compression", sensor_qos
         )
         self._pub_status = self.create_publisher(
             String, "force_sensor/status", 10
@@ -136,8 +136,8 @@ class ForceSensorNode(Node):
                 self.get_logger().warning(f"Could not parse floats in: '{line}'")
                 return
 
-            force_msg       = Float32(data=force)
-            compression_msg = Float32(data=compression)
+            force_msg       = Float64(data=force)
+            compression_msg = Float64(data=compression)
 
             self._pub_force.publish(force_msg)
             self._pub_compression.publish(compression_msg)
